@@ -10,6 +10,8 @@ Adafruit_BME680 bme;
 
 // AMBIENT LIGHT SENSOR CODE BELOW:
 #define AL_ADDR 0x48
+#define I2C_SDA 6
+#define I2C_SCL 5
 SparkFun_Ambient_Light light(AL_ADDR);
 
 // Possible values: .125, .25, 1, 2
@@ -29,7 +31,7 @@ void setup()
   Serial.begin(115200);
 
   delay(2000);
-  Wire.begin(12, 15); // SDA, SCL pins
+  Wire.begin(I2C_SDA, I2C_SCL); // SDA, SCL pins
 
   bool found = false;
   for (byte address = 1; address < 127; address++)
