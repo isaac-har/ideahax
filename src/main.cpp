@@ -188,5 +188,5 @@ void loop()
     sdDataFile.close();
   }
 
-  delay(1000);
+  delay(990);
 }
