@@ -7,6 +7,7 @@
 #include <SparkFun_VEML6030_Ambient_Light_Sensor.h>
 #include <SPI.h>
 #include <SD.h>
+#include <GP2YDustSensor.h>
 
 Adafruit_BME680 bme;
 
@@ -16,13 +17,6 @@ Adafruit_BME680 bme;
 #define I2C_SCL 5
 
 SparkFun_Ambient_Light light(AL_ADDR);
-
-// SPI Pins
-#define VSPI_MISO 13
-#define VSPI_MOSI 11
-#define VSPI_SCLK 12
-#define VSPI_SS 10
-SPIClass *sdSPI = new SPIClass(FSPI);
 
 // Possible values: .125, .25, 1, 2
 // Both .125 and .25 should be used in most cases except darker rooms.
@@ -35,7 +29,21 @@ float gain = .125;
 int lightTime = 100;
 long luxVal = 0;
 
+// SPI Pins
+#define VSPI_MISO 13
+#define VSPI_MOSI 11
+#define VSPI_SCLK 12
+#define VSPI_SS 10
+SPIClass *sdSPI = new SPIClass(FSPI);
+
+//SD Card file object
 File sdDataFile;
+
+//DUST SENSOR CODE BELOW:
+const uint8_t SHARP_LED_PIN = 14;   // Sharp Dust/particle sensor Led Pin
+const uint8_t SHARP_VO_PIN = 4;    // Sharp Dust/particle analog out pin used for reading 
+
+GP2YDustSensor dustSensor(GP2YDustSensorType::GP2Y1010AU0F, SHARP_LED_PIN, SHARP_VO_PIN);
 
 void setup()
 {
@@ -100,6 +108,12 @@ void setup()
     return;
   }
   Serial.println("SD Card Initialized");
+
+  // Dust sensor setup
+
+  //dustSensor.setBaseline(0.4); // set no dust voltage according to your own experiments
+  //dustSensor.setCalibrationFactor(1.1); // calibrate against precision instrument
+  dustSensor.begin();
 }
 
 void loop()
@@ -169,6 +183,13 @@ void loop()
   //   Serial.println("Error opening /sdData.txt");
   // }
 
+
+  // Dust sensor reading
+  Serial.print("Dust density: ");
+  Serial.print(dustSensor.getDustDensity());
+  Serial.print(" ug/m3; Running average: ");
+  Serial.print(dustSensor.getRunningAverage());
+  Serial.println(" ug/m3");
 
   delay(2000);
 }
