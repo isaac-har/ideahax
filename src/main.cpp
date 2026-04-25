@@ -12,8 +12,8 @@
 #include <GP2YDustSensor.h>
 
 // Networking Configuration
-const char* ssid = "WeatherStation_AP";
-const char* password = "ideahacks";
+const char *ssid = "WeatherStation_AP";
+const char *password = "ideahacks";
 WebSocketsServer webSocket = WebSocketsServer(81); // WebSocket server on port 81
 
 Adafruit_BME680 bme;
@@ -22,6 +22,12 @@ Adafruit_BME680 bme;
 #define AL_ADDR 0x48
 #define I2C_SDA 6
 #define I2C_SCL 5
+
+// WATER SENSOR PIN DECLARATIONS:
+#define waterSensorPower 7
+#define waterSensorPin 3
+int waterLevel = 0;
+
 
 // Possible values: .125, .25, 1, 2
 // Both .125 and .25 should be used in most cases except darker rooms.
@@ -50,7 +56,6 @@ const uint8_t SHARP_LED_PIN = 14; // Sharp Dust/particle sensor Led Pin
 const uint8_t SHARP_VO_PIN = 4;   // Sharp Dust/particle analog out pin used for reading
 
 GP2YDustSensor dustSensor(GP2YDustSensorType::GP2Y1010AU0F, SHARP_LED_PIN, SHARP_VO_PIN);
-
 
 void setup()
 {
@@ -83,11 +88,13 @@ void setup()
   webSocket.begin();
   Serial.println("WebSocket Server Started on Port 81");
 
-  Wire.begin(I2C_SDA, I2C_SCL); 
+  Wire.begin(I2C_SDA, I2C_SCL);
 
-  if (!bme.begin(0x77)) {
+  if (!bme.begin(0x77))
+  {
     Serial.println(F("Could not find a valid BME680 sensor!"));
-    while (1);
+    while (1)
+      ;
   }
   bme.setTemperatureOversampling(BME680_OS_8X);
   bme.setHumidityOversampling(BME680_OS_2X);
@@ -127,6 +134,10 @@ void setup()
   // dustSensor.setBaseline(0.4); // set no dust voltage according to your own experiments
   // dustSensor.setCalibrationFactor(1.1); // calibrate against precision instrument
   dustSensor.begin();
+
+  // Water sensor setup
+  pinMode(waterSensorPower, OUTPUT);
+  digitalWrite(waterSensorPower, LOW); // Power the water sensor
 }
 
 void loop()
@@ -136,7 +147,8 @@ void loop()
 
   float temp = 0, hum = 0, press = 0, gas = 0, lux = 0, dust = 0;
 
-  if (bme.performReading()) {
+  if (bme.performReading())
+  {
     temp = bme.temperature;
     gas = bme.gas_resistance / 1000.0;
     hum = bme.humidity;
@@ -145,29 +157,36 @@ void loop()
   lux = light.readLight();
 
   dust = dustSensor.getDustDensity();
-  
-  // Serial Output
-  Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n\n", temp, hum, press, gas, lux, dust);
 
-  // WebSocket Broadcast 
+  digitalWrite(waterSensorPower, HIGH); // Turn the sensor ON
+  delay(10);                            // wait 10 milliseconds
+  waterLevel = analogRead(waterSensorPin);
+  digitalWrite(waterSensorPower, LOW); // Turn the sensor OFF
+
+  // Serial Output
+  Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n Water Level: %d\n\n", temp, hum, press, gas, lux, dust, waterLevel);
+
+  // WebSocket Broadcast
   // We package the data into a JSON string for the Web UI
   String json = "{";
   json += "\"temp\":" + String(temp) + ",";
   json += "\"hum\":" + String(hum) + ",";
   json += "\"press\":" + String(press) + ",";
   json += "\"gas\":" + String(gas) + ",";
-  json += "\"lux\":" + String(lux);
-  json += "\"dust\":" + String(dust);
+  json += "\"lux\":" + String(lux) + ",";
+  json += "\"dust\":" + String(dust) + ",";
+  json += "\"water\":" + String(waterLevel);
   json += "}";
-  
+
   webSocket.broadcastTXT(json); // Push data to all connected browsers
 
   // SD Logging (Preserved from friend's code)
   sdDataFile = SD.open("/sdData.txt", FILE_APPEND); // Use APPEND to keep history
-  if (sdDataFile) {
-    sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3\n", temp, hum, press, gas, lux, dust);
+  if (sdDataFile)
+  {
+    sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3, Water Level: %d\n", temp, hum, press, gas, lux, dust, waterLevel);
     sdDataFile.close();
   }
 
-  delay(1000); 
+  delay(1000);
 }
