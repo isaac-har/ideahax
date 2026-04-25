@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include <WebSocketsServer.h> // New dependency for wireless telemetry
 #include <GP2YDustSensor.h>
+#include <ESP32Servo.h>
 
 // Networking Configuration
 const char *ssid = "WeatherStation_AP";
@@ -27,7 +28,6 @@ Adafruit_BME680 bme;
 #define waterSensorPower 7
 #define waterSensorPin 3
 int waterLevel = 0;
-
 
 // Possible values: .125, .25, 1, 2
 // Both .125 and .25 should be used in most cases except darker rooms.
@@ -56,6 +56,52 @@ const uint8_t SHARP_LED_PIN = 14; // Sharp Dust/particle sensor Led Pin
 const uint8_t SHARP_VO_PIN = 4;   // Sharp Dust/particle analog out pin used for reading
 
 GP2YDustSensor dustSensor(GP2YDustSensorType::GP2Y1010AU0F, SHARP_LED_PIN, SHARP_VO_PIN);
+
+// Servo Setup
+Servo myServo;
+#define SERVO_PIN 8
+float maxLux = 0;
+int bestAngle = 0;
+
+// Non blocking timer
+unsigned long previousMillis = 0;
+const long servoInterval = 30000;
+unsigned long currentMillis = 0;
+
+void servoSweep()
+{
+  maxLux = -1.0;
+  bestAngle = 0;
+
+  for (int pos = 0; pos <= 180; pos += 2)
+  { // Move in 2-degree increments for speed
+    myServo.write(pos);
+
+    // We must wait at least the 'lightTime' (100ms) for the sensor
+    // to complete a reading at this new position.
+    delay(lightTime + 20);
+
+    float currentLux = light.readLight();
+
+    if (currentLux > maxLux)
+    {
+      maxLux = currentLux;
+      bestAngle = pos;
+    }
+
+    // Optional: Print progress
+    if (pos % 20 == 0)
+      Serial.print(".");
+  }
+
+  Serial.println("\nScan Complete!");
+  Serial.printf("Brightest Light: %.2f lux at %d degrees\n", maxLux, bestAngle);
+
+  // Return to the best position
+  Serial.println("Targeting brightest spot...");
+  myServo.write(bestAngle);
+}
+
 
 void setup()
 {
@@ -138,6 +184,11 @@ void setup()
   // Water sensor setup
   pinMode(waterSensorPower, OUTPUT);
   digitalWrite(waterSensorPower, LOW); // Power the water sensor
+
+  // Servo setup
+  ESP32PWM::allocateTimer(0);
+  myServo.setPeriodHertz(50);
+  myServo.attach(SERVO_PIN, 500, 2400);
 }
 
 void loop()
@@ -188,5 +239,14 @@ void loop()
     sdDataFile.close();
   }
 
+  currentMillis = millis();
+
+  if (currentMillis - previousMillis >= servoInterval)
+  {
+    previousMillis = currentMillis;
+    servoSweep(); 
+  }
+
   delay(990);
 }
+
