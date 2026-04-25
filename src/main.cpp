@@ -7,7 +7,14 @@
 #include <SparkFun_VEML6030_Ambient_Light_Sensor.h>
 #include <SPI.h>
 #include <SD.h>
+#include <WiFi.h>
+#include <WebSocketsServer.h> // New dependency for wireless telemetry
 #include <GP2YDustSensor.h>
+
+// Networking Configuration
+const char* ssid = "WeatherStation_AP";
+const char* password = "ideahacks";
+WebSocketsServer webSocket = WebSocketsServer(81); // WebSocket server on port 81
 
 Adafruit_BME680 bme;
 
@@ -15,8 +22,6 @@ Adafruit_BME680 bme;
 #define AL_ADDR 0x48
 #define I2C_SDA 6
 #define I2C_SCL 5
-
-SparkFun_Ambient_Light light(AL_ADDR);
 
 // Possible values: .125, .25, 1, 2
 // Both .125 and .25 should be used in most cases except darker rooms.
@@ -29,6 +34,8 @@ float gain = .125;
 int lightTime = 100;
 long luxVal = 0;
 
+SparkFun_Ambient_Light light(AL_ADDR);
+
 // SPI Pins
 #define VSPI_MISO 13
 #define VSPI_MOSI 11
@@ -36,7 +43,6 @@ long luxVal = 0;
 #define VSPI_SS 10
 SPIClass *sdSPI = new SPIClass(FSPI);
 
-// SD Card file object
 File sdDataFile;
 
 // DUST SENSOR CODE BELOW:
@@ -44,6 +50,7 @@ const uint8_t SHARP_LED_PIN = 14; // Sharp Dust/particle sensor Led Pin
 const uint8_t SHARP_VO_PIN = 4;   // Sharp Dust/particle analog out pin used for reading
 
 GP2YDustSensor dustSensor(GP2YDustSensorType::GP2Y1010AU0F, SHARP_LED_PIN, SHARP_VO_PIN);
+
 
 void setup()
 {
@@ -66,15 +73,21 @@ void setup()
     }
   }
 
-  if (!found)
-  {
-    Serial.println("No I2C devices found");
-  }
-  if (!bme.begin(0x77))
-  {
-    Serial.println(F("Could not find a valid BME680 sensor, check wiring!"));
-    while (1)
-      ;
+  // Initialize Wi-Fi Access Point
+  WiFi.softAP(ssid, password);
+  Serial.println("Access Point Started");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Initialize WebSocket Server
+  webSocket.begin();
+  Serial.println("WebSocket Server Started on Port 81");
+
+  Wire.begin(I2C_SDA, I2C_SCL); 
+
+  if (!bme.begin(0x77)) {
+    Serial.println(F("Could not find a valid BME680 sensor!"));
+    while (1);
   }
   bme.setTemperatureOversampling(BME680_OS_8X);
   bme.setHumidityOversampling(BME680_OS_2X);
@@ -118,85 +131,43 @@ void setup()
 
 void loop()
 {
+  // Keep the WebSocket server alive
+  webSocket.loop();
 
-  if (bme.performReading())
-  {
-    // BME680 sensor readings
-    Serial.print("Temp: ");
-    Serial.print(bme.temperature);
-    Serial.println(" *C");
-    Serial.print("Gas: ");
-    Serial.print(bme.gas_resistance / 1000.0);
-    Serial.println(" KOhms");
-    Serial.print("Humidity: ");
-    Serial.println(bme.humidity);
-    Serial.print("Pressure: ");
-    Serial.println(bme.pressure / 100.0);
+  float temp = 0, hum = 0, press = 0, gas = 0, lux = 0, dust = 0;
+
+  if (bme.performReading()) {
+    temp = bme.temperature;
+    gas = bme.gas_resistance / 1000.0;
+    hum = bme.humidity;
+    press = bme.pressure / 100.0;
+  }
+  lux = light.readLight();
+
+  dust = dustSensor.getDustDensity();
+  
+  // Serial Output
+  Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n\n", temp, hum, press, gas, lux, dust);
+
+  // WebSocket Broadcast 
+  // We package the data into a JSON string for the Web UI
+  String json = "{";
+  json += "\"temp\":" + String(temp) + ",";
+  json += "\"hum\":" + String(hum) + ",";
+  json += "\"press\":" + String(press) + ",";
+  json += "\"gas\":" + String(gas) + ",";
+  json += "\"lux\":" + String(lux);
+  json += "\"dust\":" + String(dust);
+  json += "}";
+  
+  webSocket.broadcastTXT(json); // Push data to all connected browsers
+
+  // SD Logging (Preserved from friend's code)
+  sdDataFile = SD.open("/sdData.txt", FILE_APPEND); // Use APPEND to keep history
+  if (sdDataFile) {
+    sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3\n", temp, hum, press, gas, lux, dust);
+    sdDataFile.close();
   }
 
-  // Light sensor reading
-  Serial.print("Ambient Light Reading: ");
-  Serial.print(light.readLight());
-  Serial.println(" Lux");
-  Serial.println();
-
-  // SD Writing
-  sdDataFile = SD.open("/sdData.txt", FILE_WRITE);
-  if (sdDataFile)
-  {
-    Serial.print("Writing to SD card...");
-
-    sdDataFile.print("Temp: ");
-    sdDataFile.print(bme.temperature);
-    sdDataFile.println(" *C");
-    sdDataFile.print("Gas: ");
-    sdDataFile.print(bme.gas_resistance / 1000.0);
-    sdDataFile.println(" KOhms");
-    sdDataFile.print("Humidity: ");
-    sdDataFile.println(bme.humidity);
-    sdDataFile.print("Pressure: ");
-    sdDataFile.println(bme.pressure / 100.0);
-
-    sdDataFile.print("Ambient Light Reading: ");
-    sdDataFile.print(light.readLight());
-    sdDataFile.println(" Lux");
-    sdDataFile.println();
-
-    sdDataFile.print("Dust density: ");
-    sdDataFile.print(dustSensor.getDustDensity());
-    sdDataFile.print(" ug/m3; Running average: ");
-    sdDataFile.print(dustSensor.getRunningAverage());
-    sdDataFile.println(" ug/m3");
-
-    sdDataFile.close(); // Close to save
-    Serial.println("done.");
-  }
-
-  else
-  {
-    Serial.println("Error opening sdData.txt");
-  }
-
-  // SD Reading
-  //  sdDataFile = SD.open("/sdData.txt");
-  //  if (sdDataFile) {
-  //    Serial.println("Reading /sdData.txt:");
-  //    while (sdDataFile.available()) {
-  //      Serial.write(sdDataFile.read());
-  //    }
-  //    sdDataFile.close();
-  //  } else {
-  //    Serial.println("Error opening /sdData.txt");
-  //  }
-
-  // Dust sensor reading
-  Serial.print("Dust density: ");
-  Serial.print(dustSensor.getDustDensity());
-  Serial.print(" ug/m3; Running average: ");
-  Serial.print(dustSensor.getRunningAverage());
-  Serial.println(" ug/m3");
-
-  delay(2000);
+  delay(1000); 
 }
-
-// put function definitions here:
