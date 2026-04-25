@@ -66,9 +66,9 @@ void setup(){
 
 void loop(){
 
-  
+  luxVal = 
   Serial.print("Ambient Light Reading: ");
-  Serial.print(light.readLight());
+  Serial.print(luxVal);
   Serial.println(" Lux");  
   delay(1000);
 
