@@ -36,12 +36,12 @@ long luxVal = 0;
 #define VSPI_SS 10
 SPIClass *sdSPI = new SPIClass(FSPI);
 
-//SD Card file object
+// SD Card file object
 File sdDataFile;
 
-//DUST SENSOR CODE BELOW:
-const uint8_t SHARP_LED_PIN = 14;   // Sharp Dust/particle sensor Led Pin
-const uint8_t SHARP_VO_PIN = 4;    // Sharp Dust/particle analog out pin used for reading 
+// DUST SENSOR CODE BELOW:
+const uint8_t SHARP_LED_PIN = 14; // Sharp Dust/particle sensor Led Pin
+const uint8_t SHARP_VO_PIN = 4;   // Sharp Dust/particle analog out pin used for reading
 
 GP2YDustSensor dustSensor(GP2YDustSensorType::GP2Y1010AU0F, SHARP_LED_PIN, SHARP_VO_PIN);
 
@@ -111,8 +111,8 @@ void setup()
 
   // Dust sensor setup
 
-  //dustSensor.setBaseline(0.4); // set no dust voltage according to your own experiments
-  //dustSensor.setCalibrationFactor(1.1); // calibrate against precision instrument
+  // dustSensor.setBaseline(0.4); // set no dust voltage according to your own experiments
+  // dustSensor.setCalibrationFactor(1.1); // calibrate against precision instrument
   dustSensor.begin();
 }
 
@@ -162,6 +162,12 @@ void loop()
     sdDataFile.println(" Lux");
     sdDataFile.println();
 
+    sdDataFile.print("Dust density: ");
+    sdDataFile.print(dustSensor.getDustDensity());
+    sdDataFile.print(" ug/m3; Running average: ");
+    sdDataFile.print(dustSensor.getRunningAverage());
+    sdDataFile.println(" ug/m3");
+
     sdDataFile.close(); // Close to save
     Serial.println("done.");
   }
@@ -171,18 +177,17 @@ void loop()
     Serial.println("Error opening sdData.txt");
   }
 
-  //SD Reading
-  // sdDataFile = SD.open("/sdData.txt");
-  // if (sdDataFile) {
-  //   Serial.println("Reading /sdData.txt:");
-  //   while (sdDataFile.available()) {
-  //     Serial.write(sdDataFile.read());
-  //   }
-  //   sdDataFile.close();
-  // } else {
-  //   Serial.println("Error opening /sdData.txt");
-  // }
-
+  // SD Reading
+  //  sdDataFile = SD.open("/sdData.txt");
+  //  if (sdDataFile) {
+  //    Serial.println("Reading /sdData.txt:");
+  //    while (sdDataFile.available()) {
+  //      Serial.write(sdDataFile.read());
+  //    }
+  //    sdDataFile.close();
+  //  } else {
+  //    Serial.println("Error opening /sdData.txt");
+  //  }
 
   // Dust sensor reading
   Serial.print("Dust density: ");
