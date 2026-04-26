@@ -43,7 +43,7 @@ long luxVal = 0;
 SparkFun_Ambient_Light light(AL_ADDR);
 
 // SPI Pins
-#define VSPI_MISO 13
+#define VSPI_MISO 9
 #define VSPI_MOSI 11
 #define VSPI_SCLK 12
 #define VSPI_SS 10
@@ -193,7 +193,7 @@ void setup()
 
   // SD Card setup
   sdSPI->begin(VSPI_SCLK, VSPI_MISO, VSPI_MOSI, VSPI_SS);
-
+  delay(1000);
   if (!SD.begin(VSPI_SS, *sdSPI))
   {
     Serial.println("Card Mount Failed");
@@ -221,7 +221,6 @@ void loop()
 {
   // Keep the WebSocket server alive (needs fast, continuous looping)
   webSocket.loop();
-
   currentMillis = millis();
 
   // 1. NON-BLOCKING TIMER FOR SENSORS (Replaces delay(1000))
@@ -248,8 +247,10 @@ void loop()
     digitalWrite(waterSensorPower, LOW);
 
     rawSolarADC = analogRead(SOLAR_PIN);
-    solarPinVoltage = (rawSolarADC / 4095.0) * 3.3;
-    solarPinVoltage = (solarPinVoltage * 3.0) + 0.18;
+    printf("Raw Solar ADC: %d\n", rawSolarADC);
+    
+    solarPinVoltage = analogReadMilliVolts(SOLAR_PIN) / 1000.0; // Convert mV to V
+    solarPinVoltage = (solarPinVoltage * 3.0) - 2.6;
 
     // Serial Output
     Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n Water Level: %d\n Solar Voltage: %.2f V\n\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
