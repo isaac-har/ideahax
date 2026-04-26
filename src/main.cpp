@@ -43,7 +43,7 @@ long luxVal = 0;
 SparkFun_Ambient_Light light(AL_ADDR);
 
 // SPI Pins
-#define VSPI_MISO 9
+#define VSPI_MISO 13
 #define VSPI_MOSI 11
 #define VSPI_SCLK 12
 #define VSPI_SS 10
