@@ -11,6 +11,9 @@
 #include <WebSocketsServer.h> // New dependency for wireless telemetry
 #include <GP2YDustSensor.h>
 #include <ESP32Servo.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1327.h>
+#include <Fonts/FreeSans9pt7b.h>  // Include a 9pt font
 
 // Networking Configuration
 const char *ssid = "WeatherStation_AP";
@@ -84,6 +87,11 @@ int currentBestAngle = 0;
 // Main loop interval sensor rate limiting
 const long mainInterval = 1000; // 1 second update rate for main sensors
 unsigned long previousMillisMain = 0;
+
+// OLED Display Setup
+#define OLED_RESET -1 // No reset pin
+#define SCREEN_ADDRESS 0x3D
+Adafruit_SSD1327 display(128, 128, &Wire, OLED_RESET);
 
 void updateServoSweep()
 {
@@ -201,6 +209,11 @@ void setup()
   }
   Serial.println("SD Card Initialized");
 
+  // OLED setup
+  if (!display.begin(SCREEN_ADDRESS))
+  {
+    Serial.println("SSD1327 not found. Check wiring/address!");
+  }
   // Dust sensor setup
 
   // dustSensor.setBaseline(0.4); // set no dust voltage according to your own experiments
@@ -247,10 +260,10 @@ void loop()
     digitalWrite(waterSensorPower, LOW);
 
     rawSolarADC = analogRead(SOLAR_PIN);
-    printf("Raw Solar ADC: %d\n", rawSolarADC);
-    
+    // printf("Raw Solar ADC: %d\n", rawSolarADC);
+
     solarPinVoltage = analogReadMilliVolts(SOLAR_PIN) / 1000.0; // Convert mV to V
-    solarPinVoltage = (solarPinVoltage * 3.0) - 2.6;
+    solarPinVoltage = (solarPinVoltage * 3.0);
 
     // Serial Output
     Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n Water Level: %d\n Solar Voltage: %.2f V\n\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
@@ -276,6 +289,14 @@ void loop()
       sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3, Water Level: %d, Solar Voltage: %.2f V\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
       sdDataFile.close();
     }
+
+    display.clearDisplay();
+    // display.setFont(&FreeSans9pt7b);
+    display.setTextSize(2);
+    display.setTextColor(0xF);
+    display.setCursor(0, 0);
+    display.printf("Tmp: %.1fC\nHum: %.1f%%\nPre: %.1f\nGas: %.1f\nLux: %.1f\nDst: %.0f\nWtr: %d\nSlr: %.2fV", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
+    display.display();
   }
 
   // 2. TRIGGER SERVO SWEEP EVERY 30 SECONDS
