@@ -168,7 +168,6 @@ void setup()
   webSocket.begin();
   Serial.println("WebSocket Server Started on Port 81");
 
-  Wire.begin(I2C_SDA, I2C_SCL);
 
   if (!bme.begin(0x77))
   {
