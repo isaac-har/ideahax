@@ -65,48 +65,69 @@ int bestAngle = 0;
 
 // Non blocking timer
 unsigned long previousMillis = 0;
-const long servoInterval = 60000;
-unsigned long currentMillis = 50000;
+const long servoInterval = 30000;
+unsigned long currentMillis = 0;
 
-//Solar Panel
+// Solar Panel
 const int SOLAR_PIN = 1; // GPIO 1 (ADC1_CH0)
 int rawSolarADC = 0;
 float solarPinVoltage = 0;
 
-void servoSweep()
+// Non blocking timer for servo sweep
+bool isSweeping = false; // Keeps track of whether a sweep is active
+int currentSweepPos = 0; // Replaces the 'pos' variable from your for-loop
+unsigned long previousMillisServo = 0;
+const long sweepDelay = lightTime + 20; // lightTime   (100) + 20ms
+float currentMaxLux = -1.0;
+int currentBestAngle = 0;
+
+// Main loop interval sensor rate limiting
+const long mainInterval = 1000; // 1 second update rate for main sensors
+unsigned long previousMillisMain = 0;
+
+void updateServoSweep()
 {
-  maxLux = -1.0;
-  bestAngle = 0;
+  // 1. If we aren't currently sweeping, exit the function immediately
+  if (!isSweeping)
+    return;
 
-  for (int pos = 0; pos <= 180; pos += 2)
-  { // Move in 2-degree increments for speed
-    myServo.write(pos);
+  unsigned long currentMillis = millis();
 
-    // We must wait at least the 'lightTime' (100ms) for the sensor
-    // to complete a reading at this new position.
-    delay(lightTime + 20);
+  // 2. Has 120ms passed since our last step?
+  if (currentMillis - previousMillisServo >= sweepDelay)
+  {
+    previousMillisServo = currentMillis; // Reset the timer
 
+    // 3. Take a reading for the CURRENT position
     float currentLux = light.readLight();
 
-    if (currentLux > maxLux)
+    if (currentLux > currentMaxLux)
     {
-      maxLux = currentLux;
-      bestAngle = pos;
+      currentMaxLux = currentLux;
+      currentBestAngle = currentSweepPos;
     }
 
-    // Optional: Print progress
-    if (pos % 20 == 0)
-      Serial.print(".");
+    // 4. Increment position for the NEXT step
+    currentSweepPos += 2;
+
+    // 5. Move the servo, OR end the sweep if we reached 180
+    if (currentSweepPos <= 180)
+    {
+      myServo.write(currentSweepPos);
+    }
+    else
+    {
+      // We exceeded 180 degrees. The sweep is done.
+      Serial.println("\nScan Complete!");
+      Serial.printf("Brightest Light: %.2f lux at %d degrees\n", currentMaxLux, currentBestAngle);
+
+      Serial.println("Targeting brightest spot...");
+      myServo.write(currentBestAngle); // Move to the best spot
+
+      isSweeping = false; // Turn off the state machine
+    }
   }
-
-  Serial.println("\nScan Complete!");
-  Serial.printf("Brightest Light: %.2f lux at %d degrees\n", maxLux, bestAngle);
-
-  // Return to the best position
-  Serial.println("Targeting brightest spot...");
-  myServo.write(bestAngle);
 }
-
 
 void setup()
 {
@@ -198,65 +219,76 @@ void setup()
 
 void loop()
 {
-  // Keep the WebSocket server alive
+  // Keep the WebSocket server alive (needs fast, continuous looping)
   webSocket.loop();
-
-  float temp = 0, hum = 0, press = 0, gas = 0, lux = 0, dust = 0;
-
-  if (bme.performReading())
-  {
-    temp = bme.temperature;
-    gas = bme.gas_resistance / 1000.0;
-    hum = bme.humidity;
-    press = bme.pressure / 100.0;
-  }
-  lux = light.readLight();
-
-  dust = dustSensor.getDustDensity();
-
-  digitalWrite(waterSensorPower, HIGH); // Turn the sensor ON
-  delay(10);                            // wait 10 milliseconds
-  waterLevel = analogRead(waterSensorPin);
-  digitalWrite(waterSensorPower, LOW); // Turn the sensor OFF
-
-  rawSolarADC = analogRead(SOLAR_PIN);
-  solarPinVoltage = (rawSolarADC / 4095.0) * 3.3;
-  solarPinVoltage = (solarPinVoltage * 3.0) + 0.18;
-
-  // Serial Output
-  Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n Water Level: %d\n Solar Voltage: %.2f V\n\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
-
-  // WebSocket Broadcast
-  // We package the data into a JSON string for the Web UI
-  String json = "{";
-  json += "\"temp\":" + String(temp) + ",";
-  json += "\"hum\":" + String(hum) + ",";
-  json += "\"press\":" + String(press) + ",";
-  json += "\"gas\":" + String(gas) + ",";
-  json += "\"lux\":" + String(lux) + ",";
-  json += "\"dust\":" + String(dust) + ",";
-  json += "\"water\":" + String(waterLevel) + ",";
-  json += "\"solar\":" + String(solarPinVoltage);
-  json += "}";
-
-  webSocket.broadcastTXT(json); // Push data to all connected browsers
-
-  // SD Logging (Preserved from friend's code)
-  sdDataFile = SD.open("/sdData.txt", FILE_APPEND); // Use APPEND to keep history
-  if (sdDataFile)
-  {
-    sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3, Water Level: %d, Solar Voltage: %.2f V\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
-    sdDataFile.close();
-  }
 
   currentMillis = millis();
 
+  // 1. NON-BLOCKING TIMER FOR SENSORS (Replaces delay(1000))
+  if (currentMillis - previousMillisMain >= mainInterval)
+  {
+    previousMillisMain = currentMillis;
+
+    float temp = 0, hum = 0, press = 0, gas = 0, lux = 0, dust = 0;
+
+    if (bme.performReading())
+    {
+      temp = bme.temperature;
+      gas = bme.gas_resistance / 1000.0;
+      hum = bme.humidity;
+      press = bme.pressure / 100.0;
+    }
+    lux = light.readLight();
+
+    dust = dustSensor.getDustDensity();
+
+    digitalWrite(waterSensorPower, HIGH);
+    delay(10); // A 10ms delay is short enough not to disrupt the 120ms servo sweep
+    waterLevel = analogRead(waterSensorPin);
+    digitalWrite(waterSensorPower, LOW);
+
+    rawSolarADC = analogRead(SOLAR_PIN);
+    solarPinVoltage = (rawSolarADC / 4095.0) * 3.3;
+    solarPinVoltage = (solarPinVoltage * 3.0) + 0.18;
+
+    // Serial Output
+    Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n Water Level: %d\n Solar Voltage: %.2f V\n\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
+
+    // WebSocket Broadcast
+    String json = "{";
+    json += "\"temp\":" + String(temp) + ",";
+    json += "\"hum\":" + String(hum) + ",";
+    json += "\"press\":" + String(press) + ",";
+    json += "\"gas\":" + String(gas) + ",";
+    json += "\"lux\":" + String(lux) + ",";
+    json += "\"dust\":" + String(dust) + ",";
+    json += "\"water\":" + String(waterLevel) + ",";
+    json += "\"solar\":" + String(solarPinVoltage);
+    json += "}";
+
+    webSocket.broadcastTXT(json);
+
+    // SD Logging
+    sdDataFile = SD.open("/sdData.txt", FILE_APPEND);
+    if (sdDataFile)
+    {
+      sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3, Water Level: %d, Solar Voltage: %.2f V\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
+      sdDataFile.close();
+    }
+  }
+
+  // 2. TRIGGER SERVO SWEEP EVERY 30 SECONDS
   if (currentMillis - previousMillis >= servoInterval)
   {
     previousMillis = currentMillis;
-    servoSweep(); 
+
+    isSweeping = true;
+    currentSweepPos = 0;
+    currentMaxLux = -1.0;
+    myServo.write(0);
+    previousMillisServo = millis();
   }
 
-  delay(990);
+  // 3. EXECUTE SERVO STATE MACHINE
+  updateServoSweep();
 }
-
