@@ -65,8 +65,13 @@ int bestAngle = 0;
 
 // Non blocking timer
 unsigned long previousMillis = 0;
-const long servoInterval = 30000;
-unsigned long currentMillis = 0;
+const long servoInterval = 60000;
+unsigned long currentMillis = 50000;
+
+//Solar Panel
+const int SOLAR_PIN = 1; // GPIO 1 (ADC1_CH0)
+int rawSolarADC = 0;
+float solarPinVoltage = 0;
 
 void servoSweep()
 {
@@ -214,8 +219,12 @@ void loop()
   waterLevel = analogRead(waterSensorPin);
   digitalWrite(waterSensorPower, LOW); // Turn the sensor OFF
 
+  rawSolarADC = analogRead(SOLAR_PIN);
+  solarPinVoltage = (rawSolarADC / 4095.0) * 3.3;
+  solarPinVoltage = (solarPinVoltage * 3.0) + 0.18;
+
   // Serial Output
-  Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n Water Level: %d\n\n", temp, hum, press, gas, lux, dust, waterLevel);
+  Serial.printf("Temperature: %.2f C\n Humidity: %.2f %%\n Pressure: %.2f hPa\n Gas: %.2f kΩ\n Light: %.2f lux\n Dust: %.2f ug/m3\n Water Level: %d\n Solar Voltage: %.2f V\n\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
 
   // WebSocket Broadcast
   // We package the data into a JSON string for the Web UI
@@ -226,7 +235,8 @@ void loop()
   json += "\"gas\":" + String(gas) + ",";
   json += "\"lux\":" + String(lux) + ",";
   json += "\"dust\":" + String(dust) + ",";
-  json += "\"water\":" + String(waterLevel);
+  json += "\"water\":" + String(waterLevel) + ",";
+  json += "\"solar\":" + String(solarPinVoltage);
   json += "}";
 
   webSocket.broadcastTXT(json); // Push data to all connected browsers
@@ -235,7 +245,7 @@ void loop()
   sdDataFile = SD.open("/sdData.txt", FILE_APPEND); // Use APPEND to keep history
   if (sdDataFile)
   {
-    sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3, Water Level: %d\n", temp, hum, press, gas, lux, dust, waterLevel);
+    sdDataFile.printf("Temperature: %.2f C, Humidity: %.2f %%, Pressure: %.2f hPa, Gas: %.2f kΩ, Light: %.2f lux, Dust: %.2f ug/m3, Water Level: %d, Solar Voltage: %.2f V\n", temp, hum, press, gas, lux, dust, waterLevel, solarPinVoltage);
     sdDataFile.close();
   }
 

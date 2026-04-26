@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IdeaHacks Weather Station</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); }
+        .neon-text { text-shadow: 0 0 10px rgba(34, 211, 238, 0.5); }
+        .chart-container { height: 220px; position: relative; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+
+    <header class="p-6 border-b border-slate-700 glass sticky top-0 z-50 flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-bold text-cyan-400 tracking-tight neon-text">IDEAHACKS | Weather Station</h1>
+            <p class="text-xs text-slate-400 uppercase tracking-widest">ESP32 Wireless Telemetry Node</p>
+        </div>
+        <div id="status" class="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-mono border border-yellow-500/50">
+            CONNECTING...
+        </div>
+    </header>
+
+    <main class="p-6 max-w-7xl mx-auto space-y-6">
+        
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div class="p-4 rounded-2xl glass border border-slate-700 hover:border-cyan-500 transition-colors">
+                <p class="text-slate-400 text-sm font-medium">Temperature</p>
+                <div class="flex items-baseline space-x-1">
+                    <h2 id="temp" class="text-3xl font-bold text-white">--</h2>
+                    <span class="text-slate-400 font-bold text-xs">°C</span>
+                </div>
+            </div>
+            <div class="p-4 rounded-2xl glass border border-slate-700">
+                <p class="text-slate-400 text-sm font-medium">Humidity</p>
+                <div class="flex items-baseline space-x-1">
+                    <h2 id="hum" class="text-3xl font-bold text-white">--</h2>
+                    <span class="text-slate-400 font-bold text-xs">%</span>
+                </div>
+            </div>
+            <div class="p-4 rounded-2xl glass border border-slate-700">
+                <p class="text-slate-400 text-sm font-medium">Pressure</p>
+                <div class="flex items-baseline space-x-1">
+                    <h2 id="press" class="text-3xl font-bold text-white">--</h2>
+                    <span class="text-slate-400 font-bold text-xs uppercase">hPa</span>
+                </div>
+            </div>
+            <div class="p-4 rounded-2xl glass border border-slate-700">
+                <p class="text-slate-400 text-sm font-medium">Air Quality</p>
+                <div class="flex items-baseline space-x-1">
+                    <h2 id="gas" class="text-3xl font-bold text-white">--</h2>
+                    <span class="text-slate-400 font-bold text-xs uppercase">KΩ</span>
+                </div>
+            </div>
+            <div class="p-4 rounded-2xl glass border border-slate-700">
+                <p class="text-slate-400 text-sm font-medium">Ambient Light</p>
+                <div class="flex items-baseline space-x-1">
+                    <h2 id="lux" class="text-3xl font-bold text-white">--</h2>
+                    <span class="text-slate-400 font-bold text-xs uppercase">Lux</span>
+                </div>
+            </div>
+            <div class="p-4 rounded-2xl glass border border-slate-700">
+                <p class="text-slate-400 text-sm font-medium">Particulate</p>
+                <div class="flex items-baseline space-x-1">
+                    <h2 id="dust" class="text-3xl font-bold text-white">--</h2>
+                    <span class="text-slate-400 font-bold text-xs uppercase">µg/m³</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="p-4 rounded-2xl glass border border-slate-700 chart-container"><canvas id="chart-temp"></canvas></div>
+            <div class="p-4 rounded-2xl glass border border-slate-700 chart-container"><canvas id="chart-hum"></canvas></div>
+            <div class="p-4 rounded-2xl glass border border-slate-700 chart-container"><canvas id="chart-press"></canvas></div>
+            <div class="p-4 rounded-2xl glass border border-slate-700 chart-container"><canvas id="chart-gas"></canvas></div>
+            <div class="p-4 rounded-2xl glass border border-slate-700 chart-container"><canvas id="chart-lux"></canvas></div>
+            <div class="p-4 rounded-2xl glass border border-slate-700 chart-container"><canvas id="chart-dust"></canvas></div>
+        </div>
+    </main>
+
+    <script>
+        const STATION_IP = "192.168.4.1"; 
+        let socket;
+
+        function buildChart(ctxId, label, colorHex) {
+            const ctx = document.getElementById(ctxId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        borderColor: colorHex,
+                        backgroundColor: colorHex + '20', 
+                        data: [],
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0 
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 }, 
+                    scales: {
+                        y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                        x: { grid: { display: false }, ticks: { display: false } } 
+                    },
+                    plugins: { 
+                        legend: { labels: { color: '#f1f5f9' }, position: 'top', align: 'end' } 
+                    }
+                }
+            });
+        }
+
+        const charts = {
+            temp: buildChart('chart-temp', 'Temperature (°C)', '#22d3ee'),
+            hum: buildChart('chart-hum', 'Humidity (%)', '#a855f7'),
+            press: buildChart('chart-press', 'Pressure (hPa)', '#3b82f6'),
+            gas: buildChart('chart-gas', 'Gas Resistance (KΩ)', '#f59e0b'),
+            lux: buildChart('chart-lux', 'Light (Lux)', '#eab308'),
+            dust: buildChart('chart-dust', 'Dust (µg/m³)', '#ec4899')
+        };
+
+        function updateUI(data) {
+            document.getElementById('temp').innerText = data.temp.toFixed(1);
+            document.getElementById('hum').innerText = data.hum.toFixed(1);
+            document.getElementById('press').innerText = data.press.toFixed(1);
+            document.getElementById('gas').innerText = (data.gas).toFixed(1);
+            document.getElementById('lux').innerText = data.lux.toFixed(0);
+            
+            const dustVal = data.dust !== undefined ? data.dust : 0;
+            document.getElementById('dust').innerText = dustVal.toFixed(2);
+
+            const now = new Date().toLocaleTimeString();
+            const maxDataPoints = 30; 
+
+            Object.keys(charts).forEach(key => {
+                const chart = charts[key];
+                
+                const value = data[key] !== undefined ? data[key] : 0;
+
+                if (chart.data.labels.length > maxDataPoints) {
+                    chart.data.labels.shift();
+                    chart.data.datasets[0].data.shift();
+                }
+                
+                chart.data.labels.push(now);
+                chart.data.datasets[0].data.push(value);
+                chart.update();
+            });
+        }
+
+        function initWebSocket() {
+            const status = document.getElementById('status');
+            socket = new WebSocket(`ws://${STATION_IP}:81`);
+
+            socket.onopen = () => {
+                status.innerText = "CONNECTED";
+                status.className = "px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-mono border border-green-500/50";
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    updateUI(JSON.parse(event.data));
+                } catch (e) {
+                    console.error("Payload Parse Error:", e);
+                }
+            };
+
+            socket.onclose = () => {
+                status.innerText = "RECONNECTING...";
+                status.className = "px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-mono border border-yellow-500/50";
+                setTimeout(initWebSocket, 2000);
+            };
+        }
+
+        initWebSocket();
+    </script>
+</body>
+</html>
